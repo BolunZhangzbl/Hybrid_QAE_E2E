@@ -37,7 +37,7 @@ num_layers = 3
 
 def layer1(layer_weights):
     """
-    q layer for fading
+    q layer for fading:
     :param layer_weights:
     :return:
     """
