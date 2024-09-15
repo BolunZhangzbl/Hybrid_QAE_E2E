@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/QC-CNN" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/QCNN" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/qcnn_new" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/quantum_machine_learning" vcs="Git" />
+  </component>
+</project>
