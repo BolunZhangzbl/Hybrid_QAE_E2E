@@ -164,7 +164,6 @@ class QAE(tf.keras.models.Model):
         self.use_onehot = config.use_onehot
         self.num_qubits = config.num_qubits
         self.bit_num = config.bit_num
-        self.R = config.R
         self.channel_type = config.channel_type
         self.snr_train = config.snr_train
     

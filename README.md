@@ -42,3 +42,6 @@ python main.py --train --retrain --channel_type rayleigh
 ```bash
 python main.py --test --channel_type rayleigh
 ```
+```bash
+python main.py --test --num_qiubits 7 --channel_type rayleigh
+```
