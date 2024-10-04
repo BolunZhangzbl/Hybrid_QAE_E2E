@@ -13,78 +13,62 @@ from tensorflow.keras.layers import Input, Lambda, Add, Dense, Activation, Resha
 
 # --Private Imports
 
+
 # -- Global Variables
-
-bit_num = 4
-num_qubits = 4   # number of wires
-R = float(bit_num / num_qubits)
-dev = qml.device("default.qubit", wires=num_qubits)
-
-channel_type = 'rayleigh'
-
-snr_train = 7 if channel_type == 'awgn' else 10
-
-batch_size = 32
-num_layers = 3
-
 
 
 # -- Functions
 
+def create_circuit(dev, num_qubits, bit_num, complex=True):
+    def layer1(layer_weights):
+        """
+        q layer for fading:
+        :param layer_weights:
+        :return:
+        """
+        for wire in range(num_qubits):
+            qml.RY(layer_weights[0, wire, 0] * np.pi, wires=wire)
+        for wire in range(0, num_qubits - 1):
+            qml.CNOT(wires=[wire, (wire + 1)])
 
-########################################  Utils function for layers  ########################################
+    def layer2(layer_weights):
+        """
+        q layer for AWGN
+        :param layer_weights:
+        :return:
+        """
+        for wire in range(num_qubits):
+            qml.Hadamard(wires=wire)
+        for wire in range(num_qubits):
+            qml.Rot(*layer_weights[0, wire] * np.pi, wires=wire)
+        for wire in range(0, num_qubits - 1):
+            qml.CNOT(wires=[wire, (wire + 1)])
 
+    @qml.qnode(dev, interface='tf', diff_method='best')
+    def qcircuit_complex(inputs, weights):
 
-def layer1(layer_weights):
-    """
-    q layer for fading:
-    :param layer_weights:
-    :return:
-    """
-    for wire in range(num_qubits):
-        qml.RY(layer_weights[0, wire, 0]*np.pi, wires=wire)
-    for wire in range(0, num_qubits-1):
-        qml.CNOT(wires=[wire, (wire+1)])
-        
-        
-def layer2(layer_weights):
-    """
-    q layer for AWGN
-    :param layer_weights:
-    :return:
-    """
-    for wire in range(num_qubits):
-        qml.Hadamard(wires=wire)
-    for wire in range(num_qubits):
-        qml.Rot(*layer_weights[0, wire]*np.pi, wires=wire)
-    for wire in range(0, num_qubits-1):
-        qml.CNOT(wires=[wire, (wire+1)])
+        qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
 
+        for layer_weights in weights:
+            layer1(layer_weights)
 
-########################################  Utils function for circuits  ########################################
-    
-    
-@qml.qnode(dev, interface='tf', diff_method='best')
-def qcircuit_complex(inputs, weights):
-    
-    qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
-    
-    for layer_weights in weights:
-        layer1(layer_weights)
+        return [qml.expval(qml.PauliZ(ind)) for ind in range(num_qubits)]
 
-    return [qml.expval(qml.PauliZ(ind)) for ind in range(num_qubits)]
-    
-    
-@qml.qnode(dev, interface='tf', diff_method='best')
-def qcircuit_real(inputs, weights):
-    
-    qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
-    
-    for layer_weights in weights:
-        layer2(layer_weights)
+    @qml.qnode(dev, interface='tf', diff_method='best')
+    def qcircuit_real(inputs, weights):
 
-    return [qml.expval(qml.PauliZ(ind)) for ind in range(num_qubits)]
-   
+        qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
+
+        for layer_weights in weights:
+            layer2(layer_weights)
+
+        return [qml.expval(qml.PauliZ(ind)) for ind in range(num_qubits)]
+
+    if complex:
+        return qcircuit_complex
+    else:
+        return qcircuit_real
+
 
 ########################################  QAE, Channel  ########################################
 
@@ -146,7 +130,7 @@ def AWGN_Channel_tf(x, noise_stddev):
 ########################################  QAE Model ##########################################
     
 
-def receiver_complex(num_qubits=num_qubits, bit_num=bit_num):
+def receiver_complex(num_qubits, bit_num):
     """"""
     ipl = Input((num_qubits, 2*1))
     fl1 = Flatten()(ipl)
@@ -158,7 +142,7 @@ def receiver_complex(num_qubits=num_qubits, bit_num=bit_num):
     return model
     
     
-def receiver_real(num_qubits=num_qubits, bit_num=bit_num):
+def receiver_real(num_qubits, bit_num):
     """"""
     ipl = Input((num_qubits, ))
     d3 = Dense(2**bit_num, activation='relu')(ipl)
@@ -170,37 +154,48 @@ def receiver_real(num_qubits=num_qubits, bit_num=bit_num):
     
     
 class QAE(tf.keras.models.Model):
-    def __init__(self, snr_train=snr_train, use_onehot=True, **kwargs):
+    def __init__(self, config, **kwargs):
         super(QAE, self).__init__(**kwargs)
+
+        set_global_var(config)
         
         self.model_type = 'qae'
         self.noise_stddev = tf.sqrt(1 / (2 * R * (10 ** (snr_train / 10.0))))
-        self.use_onehot = use_onehot
+        self.use_onehot = config.use_onehot
+        self.num_qubits = config.num_qubits
+        self.bit_num = config.bit_num
+        self.R = config.R
+        self.channel_type = config.channel_type
+        self.snr_train = config.snr_train
     
-        if channel_type != 'awgn':
+        if self.channel_type != 'awgn':
+            qcircuit_complex = create_circuit(config.dev, self.num_qubits, self.bit_num, complex=True)
+
             # Tx
-            weight_shapes = {"weights": (num_layers, 1, num_qubits, 1)}
-            self.q1 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=num_qubits, name='q1')
-            self.q2 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=num_qubits, name='q2') 
-            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1, 2])), name='norm_layer')
+            weight_shapes = {"weights": (num_layers, 1, self.num_qubits, 1)}
+            self.q1 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q1')
+            self.q2 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q2')
+            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1, 2])), name='norm_layer')
             
             # Rx
-            self.Rx = receiver_complex()
+            self.Rx = receiver_complex(self.num_qubits, self.bit_num)
             
             # Channel
             self.channel =  Lambda(lambda x: Rayleigh_Channel_tf(x, self.noise_stddev), name='channel_layer')
         else:
+            qcircuit_real = create_circuit(config.dev, self.num_qubits, self.bit_num, complex=False)
+
             # Tx
-            weight_shapes = {"weights": (5, 1, num_qubits, 3)}
-            self.q1 = qml.qnn.KerasLayer(qcircuit_real, weight_shapes, output_dim=num_qubits, name='q1')
-            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1])), name='norm_layer')
+            weight_shapes = {"weights": (5, 1, self.num_qubits, 3)}
+            self.q1 = qml.qnn.KerasLayer(qcircuit_real, weight_shapes, output_dim=self.num_qubits, name='q1')
+            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1])), name='norm_layer')
             
             # Rx
-            self.Rx = receiver_real()
+            self.Rx = receiver_real(self.num_qubits, self.bit_num)
         
             # Channel
             self.channel = Lambda(lambda x: AWGN_Channel_tf(x, self.noise_stddev), name='channel_layer')
-     
+
     def calculate_padding(self, kernel_size, padding='valid'):
         if padding == 'same':
             total_pad = kernel_size - 1
@@ -250,6 +245,7 @@ class QAE(tf.keras.models.Model):
             
             x = tf.stack([x1, x2], axis=-1)
         else:
+            # AWGN
             x = self.q1(inputs)
 
         x = self.norm(x)
@@ -272,19 +268,19 @@ class QAE(tf.keras.models.Model):
     def test_bler_ber(self, test_datasize=int(1e6), save=False):
 
         if self.use_onehot:
-            inputs = get_onehot_data(test_datasize, bit_num)
+            inputs = get_onehot_data(test_datasize, self.bit_num)
         else:
-            inputs = get_binary_data(test_datasize, bit_num)
+            inputs = get_binary_data(test_datasize, self.bit_num)
         SNR_range = list(np.linspace(0, 20, 41))
         ber_list, bler_list = [], []
 
         x = self.encode(inputs)
-        print(f"Running BER BLER Test for QAE {num_qubits}{bit_num} on {channel_type}!!!")
+        print(f"Running BER BLER Test for QAE {self.num_qubits}{self.bit_num} on {self.channel_type}!!!")
         for snr in SNR_range:
             SNR = 10 ** (snr / 10.0)
             noise_std = np.sqrt(1 / (2 * R * SNR))
             
-            if channel_type == 'rayleigh':
+            if self.channel_type == 'rayleigh':
                 y_noisy = Rayleigh_Channel_tf(x, noise_std)
             else:
                 y_noisy = AWGN_Channel_tf(x, noise_std)
@@ -317,8 +313,8 @@ class QAE(tf.keras.models.Model):
                 break
        
         if save:
-            file_path_bler = f"{num_qubits}{bit_num}_onehot/lists/bler_list_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.txt"
-            file_path_ber = f"{num_qubits}{bit_num}_onehot/lists/ber_list_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.txt"
+            file_path_bler = f"{self.num_qubits}{self.bit_num}_onehot/lists/bler_list_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.txt"
+            file_path_ber = f"{self.num_qubits}{self.bit_num}_onehot/lists/ber_list_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.txt"
 
             np.savetxt(file_path_bler, bler_list)
             np.savetxt(file_path_ber, ber_list)
@@ -327,21 +323,21 @@ class QAE(tf.keras.models.Model):
         
         
     def save_model_weights(self, filepath=None):
-        filepath = f"{num_qubits}{bit_num}_onehot/models/model_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.keras" if filepath is None else filepath
+        filepath = f"{num_qubits}{bit_num}_onehot/models/model_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.keras" if filepath is None else filepath
         print("filepath: ", filepath)
         self.save_weights(filepath)
         
-        print(f"Successfully saved model for {self.model_type} onehot {num_qubits}{bit_num}!!!")
+        print(f"Successfully saved model for {self.model_type} onehot {self.num_qubits}{self.bit_num}!!!")
 
 
     def load_model_weights(self, filepath=None):
         if not self.built:
             self.built = True
-        filepath = f"{num_qubits}{bit_num}_onehot/models/model_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.keras" if filepath is None else filepath
+        filepath = f"{num_qubits}{bit_num}_onehot/models/model_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.keras" if filepath is None else filepath
         print("filepath: ", filepath)
         self.load_weights(filepath)
         
-        print(f"Successfully loaded model for {self.model_type} onehot {num_qubits}{bit_num}!!!")
+        print(f"Successfully loaded model for {self.model_type} onehot {self.num_qubits}{self.bit_num}!!!")
         
         
     def test_pilot_power(self, snr=10, test_datasize=int(1e6), save=False):
@@ -353,9 +349,9 @@ class QAE(tf.keras.models.Model):
         pilot_power_range = list(np.linspace(1, 20, 20))
         pilot_ber_list, pilot_bler_list = [], []
         
-        inputs = get_onehot_data(test_datasize, bit_num)
+        inputs = get_onehot_data(test_datasize, self.bit_num)
         
-        print(f"Running Pilot Power Test for QAE {num_qubits}{bit_num} on {channel_type}!!!")
+        print(f"Running Pilot Power Test for QAE {self.num_qubits}{self.bit_num} on {self.channel_type}!!!")
         x = self.encode(inputs)
         for power in pilot_power_range:
             x_pilots = tf.random.normal((test_datasize, 1, 2))
@@ -377,8 +373,8 @@ class QAE(tf.keras.models.Model):
         
         # save
         if save:
-            file_path_bler = f"{num_qubits}{bit_num}_onehot/lists/pilot_bler_list_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.txt"
-            file_path_ber = f"{num_qubits}{bit_num}_onehot/lists/pilot_ber_list_{self.model_type}_{num_qubits}{bit_num}_SNR{snr_train}.txt"
+            file_path_bler = f"{self.num_qubits}{self.bit_num}_onehot/lists/pilot_bler_list_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.txt"
+            file_path_ber = f"{self.num_qubits}{self.bit_num}_onehot/lists/pilot_ber_list_{self.model_type}_{self.num_qubits}{self.bit_num}_SNR{self.snr_train}.txt"
 
             np.savetxt(file_path_bler, pilot_bler_list)
             np.savetxt(file_path_ber, pilot_ber_list)
@@ -390,9 +386,8 @@ class QAE(tf.keras.models.Model):
 ########################################  Save History  ##########################################
 
 
-def save_history(history, ae_type='qae', num_qubits=num_qubits, bit_num=bit_num, snr_train=10, save=False):
-    assert ae_type in ('qae', 'ae')
-
+def save_history(history, num_qubits, bit_num, snr_train=10, save=False):
+    ae_type = 'qae'
     history_dict = history.history if hasattr(history, 'history') else history
     if save:
         filename = f"history_{ae_type}_{num_qubits}{bit_num}_SNR{snr_train}.npz"
@@ -401,10 +396,11 @@ def save_history(history, ae_type='qae', num_qubits=num_qubits, bit_num=bit_num,
 
     print(f"Successfully saved history dict for {ae_type} {num_qubits}{bit_num}!!!")
 
+
 ########################################  Utils Func to create folders  ##########################################
 
 
-def create_folders(num_qubits=num_qubits, bit_num=bit_num):
+def create_folders(num_qubits, bit_num):
     dirs = [f"{num_qubits}{bit_num}_onehot/history",
             f"{num_qubits}{bit_num}_onehot/models",
             f"{num_qubits}{bit_num}_onehot/lists"]
@@ -423,18 +419,27 @@ def set_seeds(seed=42):
     tf.random.set_seed(seed)
     
     
-def set_global_var(num_qubits_val, bit_num_val, use_onehot_val, channel_type_val='rayleigh'):
+def set_global_var(config):
     """"""
-    global num_qubits, bit_num, use_onehot, snr_train, R, channel_type
+    global num_qubits, bit_num, use_onehot, dev, snr_train, R, channel_type, batch_size, num_layers, save
 
-    num_qubits = num_qubits_val
-    bit_num = bit_num_val
-    use_onehot = use_onehot_val
-    channel_type = channel_type_val
+    num_qubits = config.num_qubits
+    bit_num = config.bit_num
+    use_onehot = config.use_onehot
+    dev = qml.device("default.qubit", wires=num_qubits)
+    channel_type = config.channel_type
+    batch_size = 32
+    num_layers = 3
     snr_train = 7 if channel_type == 'awgn' else 10
+    save = config.save
+
     R = float(bit_num / num_qubits)
+    print("bit_num: ", bit_num)
+    print("num_qubits: ", num_qubits)
     print("R: ", R)
-    print(channel_type, snr_train)
+    print("channel type:", channel_type)
+    print("snr train: ", snr_train)
+
 
 
 ########################################  Utils Func  ##########################################
@@ -486,13 +491,13 @@ def bler_metric(y_true, y_pred):
     return bler
     
 
-def get_binary_data(data_size, bit_num=bit_num):
+def get_binary_data(data_size, bit_num):
     """"""
     data = np.random.binomial(1, 0.5, size=(data_size, bit_num))
     return data
 
 
-def get_onehot_data(data_size, bit_num=bit_num):
+def get_onehot_data(data_size, bit_num):
     # Generate random integer indices between 0 and num_bits-1
     num_bits_onehot = 2**bit_num
     random_indices = np.random.randint(0, num_bits_onehot, size=data_size)
@@ -523,25 +528,6 @@ def get_ber(x_in, x_out):
     ber_val = np.mean((x_in != x_out).astype(int))
 
     return ber_val
-
-
-def count_error_bits(block1, block2, snr_db, channel_type):
-    """"""
-    block1 = np.array(np.squeeze(block1))
-    block2 = np.array(np.squeeze(block2))
-    snr_db = int(snr_db)
-    
-    assert block1.shape == block2.shape
-    assert len(block1.shape) == 2
-    
-    num_blocks, num_bits_per_block = block1.shape
-    
-    bit_errors = np.sum(block1 != block2, axis=1)
-    
-    error_bits_count = np.bincount(bit_errors, minlength=num_bits_per_block+1)
-    
-    np.savetxt(f"{num_qubits}{bit_num}_onehot/lists/error_bits_count_qae_{snr_db}db_{channel_type}.txt", error_bits_count)
-    print(f"Successfully saved error_bits_count for {num_qubits}{bit_num} {snr_db}dB {channel_type}!!!")
     
 
 def hybrid_loss(y_true, y_pred):
@@ -560,33 +546,30 @@ def hybrid_loss(y_true, y_pred):
     loss = 0.999*bler + 0.001*cc_loss
     
     return loss
-    
 
 
-def train(num_qubits=num_qubits, bit_num=bit_num, snr_train=snr_train,
-          use_onehot=True, retrain=False, save=True):
+def train(config):
     """"""
-    print("R: ", R)
 
     lr = 0.001
-    create_folders(num_qubits=num_qubits, bit_num=bit_num)
+    create_folders(num_qubits=config.num_qubits, bit_num=config.bit_num)
     set_seeds(2)
-    model_qae = QAE()
-    if retrain:
+    model_qae = QAE(config)
+    if config.retrain:
         model_qae.load_model_weights()
         
     if use_onehot:
-        x_train = y_train = get_onehot_data(50016, bit_num)
-        x_val = y_val = get_onehot_data(128, bit_num)
+        x_train = y_train = get_onehot_data(50016, config.bit_num)
+        x_val = y_val = get_onehot_data(128, config.bit_num)
         model_qae.compile(optimizer=tf.keras.optimizers.Adam(lr), loss='categorical_crossentropy',
                           metrics=['acc', ber_onehot, bler_onehot])
     else:
-        x_train = y_train = get_binary_data(50016, bit_num)
-        x_val = y_val = get_binary_data(128, bit_num)
+        x_train = y_train = get_binary_data(50016, config.bit_num)
+        x_val = y_val = get_binary_data(128, config.bit_num)
         model_qae.compile(optimizer=tf.keras.optimizers.Adam(lr), loss='binary_crossentropy',
                           metrics=['acc', ber_metric])
     
-    checkpoint_path = f"{num_qubits}{bit_num}_onehot/models/model_qae_{num_qubits}{bit_num}_SNR{snr_train}.keras"
+    checkpoint_path = f"{config.num_qubits}{config.bit_num}_onehot/models/model_qae_{config.num_qubits}{config.bit_num}_SNR{config.snr_train}.keras"
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
         monitor='bler_onehot',
@@ -601,7 +584,7 @@ def train(num_qubits=num_qubits, bit_num=bit_num, snr_train=snr_train,
 
     # save models
     model_qae.load_model_weights()
-    save_history(history_qae, 'qae', num_qubits, bit_num, snr_train, save=True)
+    save_history(history_qae, config.num_qubits, config.bit_num, config.snr_train, save=True)
 
     # Run & save bler, ber
     set_seeds(3)
