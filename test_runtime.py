@@ -1,4 +1,10 @@
 # -- Public Imports
+import gc
+import os
+import random
+import pennylane as qml
+from pennylane import numpy as np
+
 import cirq
 import timeit
 import tensorflow_quantum as tfq
@@ -9,12 +15,25 @@ from tensorflow.keras.layers import Input, Lambda, Add, Dense, Activation, Resha
 
 
 # --Private Imports
-from QE2E import *
+
 
 # -- Global Variables
 
 
 # -- Functions
+
+def get_onehot_data(data_size, bit_num):
+    # Generate random integer indices between 0 and num_bits-1
+    num_bits_onehot = 2**bit_num
+    random_indices = np.random.randint(0, num_bits_onehot, size=data_size)
+
+    # Create an array of zeros with shape (data_size, num_bits)
+    onehot_data = np.zeros((data_size, num_bits_onehot), dtype=int)
+
+    # Set the appropriate indices to 1 for one-hot encoding
+    onehot_data[np.arange(data_size), random_indices] = 1
+
+    return onehot_data
 
 def create_qml_circuit(dev, num_qubits, bit_num):
     def layer1(layer_weights):
@@ -66,6 +85,7 @@ def create_tfq_circuit(num_qubits, bit_num):
     model = tfq.layers.PQC(circuit, operators=[cirq.Z(qubits[i]) for i in range(num_qubits)])
     return tf.keras.Model(inputs=[inputs, weights], outputs=model(inputs))
 
+
 def transmitter(num_qubits, bit_num):
     ipl = Input((2**bit_num,))
     d1 = Dense(2**bit_num, activation='relu')(ipl)
@@ -81,7 +101,7 @@ def transmitter(num_qubits, bit_num):
 def time_inference(iters=100):
     dev = qml.device("default.qubit", wires=4)
     weight_init = np.random.rand(3, 1, 4, 1)
-    qml_circuit = create_circuit(dev, 4, 4, complex=True)
+    qml_circuit = create_qml_circuit(dev, 4, 4, complex=True)
     dnn = transmitter(4, 4)
     tfq_circuit = create_tfq_circuit(4, 4)
 
