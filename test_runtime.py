@@ -5,7 +5,6 @@ import random
 import pennylane as qml
 from pennylane import numpy as np
 
-# import cirq
 import timeit
 
 import tensorflow as tf
@@ -47,7 +46,7 @@ def create_qml_circuit(dev, num_qubits, bit_num):
         for wire in range(0, num_qubits - 1):
             qml.CNOT(wires=[wire, (wire + 1)])
 
-    @qml.qnode(dev, diff_method='adjoint', mutable=False)
+    @qml.qnode(dev, diff_method='best', mutable=False)
     def qcircuit_complex(inputs, weights):
 
         qml.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
@@ -72,7 +71,7 @@ def transmitter(num_qubits, bit_num):
 
 
 def time_inference(iters=1000):
-    dev = qml.device("lightning.qubit", wires=4)
+    dev = qml.device("default.qubit", wires=4)
     weight_init = np.random.rand(3, 1, 4, 1)
     qml_circuit = create_qml_circuit(dev, 4, 4)
     dnn = transmitter(4, 4)
@@ -93,4 +92,4 @@ def time_inference(iters=1000):
     print(f"1. Finish calculating avg running time for DNN - {avg_time1} sec.")
 
 
-time_inference()
+# time_inference()

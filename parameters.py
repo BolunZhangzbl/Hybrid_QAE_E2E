@@ -17,6 +17,7 @@ class Config:
         self.R = float(self.bit_num / self.num_qubits)
         self.dev = qml.device("default.qubit", wires=self.num_qubits)
         self.channel_type = "rayleigh"
+        self.retrain = False
 
         self.snr_train = 7 if self.channel_type == 'awgn' else 10
 
@@ -30,9 +31,10 @@ class Config:
         self.num_qubits = args.num_qubits
         self.use_onehot = args.use_onehot
         self.channel_type = args.channel_type
+        self.retrain = args.retrain
+
         self.snr_train = 7 if self.channel_type == 'awgn' else 10
         self.save = args.save
-        self.dev = qml.device("default.qubit", wires=self.num_qubits)
         self.R = float(self.bit_num / self.num_qubits)
 
         print("bit_num: ", self.bit_num)
