@@ -17,15 +17,23 @@ This repository contains the implementation of a Hybrid Quantum Autoencoder (QAE
 
 The following packages are required to run the code:
 
-- `pennylane==0.36.0`
-- `tensorflow==2.8.1`
+- `pennylane`
+- `tensorflow`
 
-### Installation
+## Installation
 
-You can install the required packages using pip:
+### **Option 1** (Basic Installation):
 
 ```bash
-pip install pennylane==0.36.0 tensorflow==2.8.1
+pip install tensorflow==2.15.0 pennylane
+```
+
+### **Option 2** (For Lightning Plugins with `lightning.qubit`, `lightning.gpu`):
+
+```bash
+pip install tensorflow==2.15.0
+pip install pennylane pennylane-lightning pennylane-lightning-gpu --upgrade
+pip install custatevec-cu12
 ```
 
 ### Train the model
