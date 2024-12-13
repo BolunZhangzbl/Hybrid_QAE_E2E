@@ -69,7 +69,7 @@ def transmitter(num_qubits, bit_num):
 
 def time_inference(iters=1000, batch_size=32):
     dev_default = qml.device("default.qubit", wires=4)
-    dev_lightning = qml.device("lightning.gpu", wires=4)
+    dev_lightning = qml.device("lightning.qubit", wires=4)
     weight_qml = np.random.rand(3, 1, 4, 1) * 0.01
     qml_circuit_default0 = create_qml_circuit(dev_default, 4, 4, 'tensorflow')
     qml_circuit_default1 = create_qml_circuit(dev_default, 4, 4, None)
