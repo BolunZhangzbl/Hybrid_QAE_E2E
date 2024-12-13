@@ -67,7 +67,7 @@ def transmitter(num_qubits, bit_num):
     return model
 
 
-def time_inference(iters=1000):
+def time_inference(iters=1000, batch_size=32):
     dev_default = qml.device("default.qubit", wires=4)
     dev_lightning = qml.device("lightning.gpu", wires=4)
     weight_qml = np.random.rand(3, 1, 4, 1) * 0.01
@@ -83,7 +83,7 @@ def time_inference(iters=1000):
 
     dnn = transmitter(4, 4)
 
-    data = get_onehot_data(1, 4)[0]
+    data = get_onehot_data(batch_size, 4)
     # data = np.random.rand(1024, 4)
 
     # Pennylane Circuit Timing - Default
@@ -112,7 +112,7 @@ def time_inference(iters=1000):
 
     # DNN Timing
     print(f"\n4. Calculating avg running time for DNN......")
-    execution_time = timeit.timeit(lambda: dnn(np.expand_dims(data, axis=0)), number=iters)
+    execution_time = timeit.timeit(lambda: dnn(data), number=iters)
     avg_time4 = execution_time / iters
     print(f"4. Finish calculating avg running time for DNN - {avg_time4} sec.")
 
