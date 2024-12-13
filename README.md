@@ -45,3 +45,8 @@ python main.py --test --channel_type rayleigh
 ```bash
 python main.py --test --num_qiubits 7 --channel_type rayleigh
 ```
+
+### Run the Inference Time Comparisons (Execution Time)
+```bash
+python test_runtime.py
+```

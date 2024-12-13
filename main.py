@@ -1,10 +1,15 @@
 # -- Public Imports
 import argparse
+import tensorflow as tf
 
 # -- Private Imports
 import test_QE2E as tqf
 import QE2E as qf
 from parameters import config
+
+# -- Global Variables
+tf.get_logger().setLevel('ERROR')
+tf.keras.backend.set_floatx('float64')
 
 # -- Functions
 

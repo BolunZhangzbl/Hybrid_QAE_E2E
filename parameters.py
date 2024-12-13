@@ -15,7 +15,7 @@ class Config:
         self.num_qubits = 4
         self.use_onehot = True
         self.R = float(self.bit_num / self.num_qubits)
-        self.dev = qml.device("default.qubit", wires=self.num_qubits)
+        self.dev = qml.device("lightning.qubit", wires=self.num_qubits)
         self.channel_type = "rayleigh"
         self.retrain = False
 

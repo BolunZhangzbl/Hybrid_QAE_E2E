@@ -102,11 +102,17 @@ def Rayleigh_Channel_tf(x, noise_stddev):
     x_real = x[:, :, 0]
     x_imag = x[:, :, 1]
 
-    H_R = tf.random.normal(K.shape(x_real[:, :1]), mean=0, stddev=tf.sqrt(1/2))
-    H_I = tf.random.normal(K.shape(x_imag[:, :1]), mean=0, stddev=tf.sqrt(1/2))
+    H_R = tf.random.normal(K.shape(x_real[:, :1]), mean=0, stddev=tf.cast(tf.sqrt(1 / 2), tf.float64), dtype=tf.float64)
+    H_I = tf.random.normal(K.shape(x_imag[:, :1]), mean=0, stddev=tf.cast(tf.sqrt(1 / 2), tf.float64), dtype=tf.float64)
 
-    noise_r = tf.random.normal(K.shape(x_real), mean=0, stddev=noise_stddev)
-    noise_i = tf.random.normal(K.shape(x_imag), mean=0, stddev=noise_stddev)
+    noise_r = tf.random.normal(K.shape(x_real), mean=0, stddev=tf.cast(noise_stddev, tf.float64), dtype=tf.float64)
+    noise_i = tf.random.normal(K.shape(x_imag), mean=0, stddev=tf.cast(noise_stddev, tf.float64), dtype=tf.float64)
+
+    # H_R = tf.random.normal(K.shape(x_real[:, :1]), mean=0, stddev=tf.sqrt(1/2))
+    # H_I = tf.random.normal(K.shape(x_imag[:, :1]), mean=0, stddev=tf.sqrt(1/2))
+    #
+    # noise_r = tf.random.normal(K.shape(x_real), mean=0, stddev=noise_stddev)
+    # noise_i = tf.random.normal(K.shape(x_imag), mean=0, stddev=noise_stddev)
 
     # Concatenating the real and imaginary components of received signal
     y = convolve(x_real, x_imag, H_R, H_I, noise_r, noise_i)
@@ -172,9 +178,9 @@ class QAE(tf.keras.models.Model):
 
             # Tx
             weight_shapes = {"weights": (num_layers, 1, self.num_qubits, 1)}
-            self.q1 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q1')
-            self.q2 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q2')
-            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1, 2])), name='norm_layer')
+            self.q1 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q1', dtype=tf.float64)
+            self.q2 = qml.qnn.KerasLayer(qcircuit_complex, weight_shapes, output_dim=self.num_qubits, name='q2', dtype=tf.float64)
+            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float64)) * (K.l2_normalize(x, axis=[1, 2])), name='norm_layer')
             
             # Rx
             self.Rx = receiver_complex(self.num_qubits, self.bit_num)
@@ -187,7 +193,7 @@ class QAE(tf.keras.models.Model):
             # Tx
             weight_shapes = {"weights": (5, 1, self.num_qubits, 3)}
             self.q1 = qml.qnn.KerasLayer(qcircuit_real, weight_shapes, output_dim=self.num_qubits, name='q1')
-            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1])), name='norm_layer')
+            self.norm = Lambda(lambda x: tf.sqrt(tf.cast(self.num_qubits, tf.float64)) * (K.l2_normalize(x, axis=[1])), name='norm_layer')
             
             # Rx
             self.Rx = receiver_real(self.num_qubits, self.bit_num)
@@ -552,7 +558,7 @@ def train(config):
 
     lr = 0.001
     create_folders(num_qubits=config.num_qubits, bit_num=config.bit_num)
-    set_seeds(2)
+    # set_seeds(2)
     model_qae = QAE(config)
     if config.retrain:
         model_qae.load_model_weights()
@@ -567,7 +573,7 @@ def train(config):
         x_val = y_val = get_binary_data(128, config.bit_num)
         model_qae.compile(optimizer=tf.keras.optimizers.Adam(lr), loss='binary_crossentropy',
                           metrics=['acc', ber_metric])
-    
+
     checkpoint_path = f"{config.num_qubits}{config.bit_num}_onehot/models/model_qae_{config.num_qubits}{config.bit_num}_SNR{config.snr_train}.keras"
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
@@ -577,7 +583,7 @@ def train(config):
         save_weights_only=True,
         verbose=1,
     )
-    history_qae = model_qae.fit(x_train, y_train, epochs=276, batch_size=32, validation_data=(x_val, y_val),
+    history_qae = model_qae.fit(x_train, y_train, epochs=138, batch_size=32, validation_data=(x_val, y_val),
                                 callbacks=[checkpoint_callback])
     print(model_qae.summary())
 
@@ -586,7 +592,7 @@ def train(config):
     save_history(history_qae, config.num_qubits, config.bit_num, config.snr_train, save=True)
 
     # Run & save bler, ber
-    set_seeds(3)
+    # set_seeds(3)
     ber_list, bler_list = model_qae.test_bler_ber(save=True)
     
     return model_qae, history_qae, ber_list, bler_list
