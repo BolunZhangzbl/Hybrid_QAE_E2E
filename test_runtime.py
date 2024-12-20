@@ -60,9 +60,9 @@ def transmitter(num_qubits, bit_num):
     ipl = Input((2**bit_num,))
     d1 = Dense(2**bit_num, activation='relu')(ipl)
     d2 = Dense(num_qubits, activation='linear')(d1)
-    # nl = Lambda(lambda x: tf.sqrt(tf.cast(num_qubits, tf.float32)) * (K.l2_normalize(x, axis=[1])))(d2)
+    nl = Lambda(lambda x: tf.sqrt(tf.cast(num_qubits, tf.float32)) * (tf.math.l2_normalize(x, axis=[1])))(d2)
 
-    model = tf.keras.models.Model(inputs=ipl, outputs=d2)
+    model = tf.keras.models.Model(inputs=ipl, outputs=nl)
 
     return model
 
@@ -70,20 +70,15 @@ def transmitter(num_qubits, bit_num):
 def time_inference(iters=1000, batch_size=32):
     dev_default = qml.device("default.qubit", wires=4)
     dev_lightning = qml.device("lightning.qubit", wires=4)
-    weight_qml = np.random.rand(3, 1, 4, 1) * 0.01
+    weight_qml = np.random.rand(3, 1, 4, 1) #* 0.01
     qml_circuit_default0 = create_qml_circuit(dev_default, 4, 4, 'tensorflow')
     qml_circuit_default1 = create_qml_circuit(dev_default, 4, 4, None)
     qml_circuit_lightning0 = create_qml_circuit(dev_lightning, 4, 4, 'tensorflow')
     qml_circuit_lightning1 = create_qml_circuit(dev_lightning, 4, 4, None)
 
-    weight_tfq = np.random.rand(3, 1, 4, 1)
-    # tfq_circuit = create_tfq_circuit(num_qubits=4, bit_num=4)
-
-    weight_qiskit = np.random.rand(3, 1, 4, 1)
-
     dnn = transmitter(4, 4)
 
-    data = get_onehot_data(batch_size, 4)
+    data = get_onehot_data(batch_size, 4)[0]
     # data = np.random.rand(1024, 4)
 
     # Pennylane Circuit Timing - Default
@@ -112,7 +107,7 @@ def time_inference(iters=1000, batch_size=32):
 
     # DNN Timing
     print(f"\n4. Calculating avg running time for DNN......")
-    execution_time = timeit.timeit(lambda: dnn(data), number=iters)
+    execution_time = timeit.timeit(lambda: dnn(np.expand_dims(data, axis=0)), number=iters)
     avg_time4 = execution_time / iters
     print(f"4. Finish calculating avg running time for DNN - {avg_time4} sec.")
 
@@ -129,4 +124,4 @@ def time_inference(iters=1000, batch_size=32):
     plt.show()
 
 
-time_inference()
+time_inference(batch_size=1)

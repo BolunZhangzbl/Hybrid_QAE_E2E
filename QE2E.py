@@ -44,7 +44,7 @@ def create_circuit(dev, num_qubits, bit_num, complex=True):
         for wire in range(0, num_qubits - 1):
             qml.CNOT(wires=[wire, (wire + 1)])
 
-    @qml.qnode(dev, interface='tf', diff_method='best')
+    @qml.qnode(dev, interface='autograd', diff_method='best')
     def qcircuit_complex(inputs, weights):
 
         qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
@@ -54,7 +54,7 @@ def create_circuit(dev, num_qubits, bit_num, complex=True):
 
         return [qml.expval(qml.PauliZ(ind)) for ind in range(num_qubits)]
 
-    @qml.qnode(dev, interface='tf', diff_method='best')
+    @qml.qnode(dev, interface='autograd', diff_method='best')
     def qcircuit_real(inputs, weights):
 
         qml.templates.AmplitudeEmbedding(inputs, wires=range(bit_num), normalize=True)
